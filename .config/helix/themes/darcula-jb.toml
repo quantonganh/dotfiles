@@ -1,0 +1,13 @@
+inherits = "darcula"
+
+"type" = "variable"
+"type.builtin" = "orange"
+"variable" = "variable"
+"variable.other.member" = "variable"
+"function" = "function"
+"function.builtin" = "orange"
+"function.method" = "function"
+
+[palette]
+variable = "#A9B7C6"
+function = "#B09D79"

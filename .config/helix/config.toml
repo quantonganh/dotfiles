@@ -1,12 +1,16 @@
 theme = "darcula-jb"
 
 [editor]
+auto-save=true
 bufferline = "multiple"
 
 [editor.cursor-shape]
 normal = "block"
 insert = "bar"
 select = "underline"
+
+[editor.file-picker]
+hidden = false
 
 [editor.indent-guides]
 render = true
@@ -23,6 +27,8 @@ mode.insert = "INSERT"
 mode.select = "SELECT"
 
 [keys.normal]
+"{" = ["goto_prev_paragraph", "collapse_selection"]
+"}" = ["goto_next_paragraph", "collapse_selection"]
 0 = "goto_line_start"
 "$" = "goto_line_end"
 G = "goto_file_end"
@@ -33,6 +39,26 @@ x = "delete_selection"
 
 #C-f = [":new", ":insert-output lf-pick", ":theme default", "select_all", "split_selection_on_newline", "goto_file", "goto_last_modified_file", ":buffer-close!", ":theme darcula"]
 
+[keys.normal.d]
+d = ["extend_to_line_bounds", "yank_main_selection_to_clipboard", "delete_selection"]
+
+[keys.normal.y]
+y = ["extend_to_line_bounds", "yank_main_selection_to_clipboard", "normal_mode", "collapse_selection"]
+
+[keys.normal.";"]
+r = ":sh run.sh %val{filename} > /tmp/run.log 2>&1"
+g = ":sh lazygit.sh"
+
 [keys.select]
+"{" = ["extend_to_line_bounds", "goto_prev_paragraph"]
+"}" = ["extend_to_line_bounds", "goto_next_paragraph"]
+G = "goto_file_end"
+
+k = ["extend_line_up", "extend_to_line_bounds"]
+j = ["extend_line_down", "extend_to_line_bounds"]
+
 x = ["yank_main_selection_to_clipboard", "delete_selection"]
 
+[keys.insert]
+"C-t" = "indent"
+"C-d" = "unindent"

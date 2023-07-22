@@ -10,6 +10,7 @@ alias bu="brew upgrade"
 alias bud="brew update"
 
 alias ch="cht.sh"
+alias c99="clang"
 
 alias d="docker"
 alias dc="docker-compose $1"
@@ -27,6 +28,7 @@ alias h2="how2"
 alias http="xh"
 
 alias k="kubectl"
+alias n="nb"
 
 alias sc="supervisorctl"
 alias sed="gsed"
@@ -48,6 +50,9 @@ alias ls="exa"
 alias o="open"
 alias ss="salt-call -l debug state.sls"
 alias v="hx"
+alias wt="wezterm"
+
+direnv hook fish | source
 
 # The next line updates PATH for the Google Cloud SDK.
 if [ -f '~/Downloads/google-cloud-sdk/path.fish.inc' ]; . '~/Downloads/google-cloud-sdk/path.fish.inc'; end

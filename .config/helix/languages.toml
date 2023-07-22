@@ -1,4 +1,25 @@
 [[language]]
-name = "markdown"
-file-types = ["md", "markdown"]
-language-server = { command = "mdpls" }
+name = "go"
+formatter = { command = "goimports"}
+
+# [[language]]
+# name = "markdown"
+# file-types = ["md", "markdown"]
+# language-server = { command = "mdpls" }
+
+# [[language]]
+# name = "python"
+# roots = ["pyproject.toml"]
+# language-server = { command = "pyright-langserver", args = ["--stdio"] }
+# config = {}
+
+[[language]]
+name = "c"
+indent = { tab-width = 4, unit = "    " }
+# soft-wrap = { enable = true, wrap-at-text-width = true }
+
+[[language]]
+name = "bash"
+file-types = ["sh", "bash"]
+shebangs = ["sh", "bash"]
+indent = { tab-width = 4, unit = "    " }

@@ -111,6 +111,10 @@ function editable(filename)
   return false
 end
 
+function basename(s)
+  return string.gsub(s, '(.*[/\\])(.*)', '%2')
+end
+
 wezterm.on('open-uri', function(window, pane, uri)
   local name = extract_filename(uri)
   if name and editable(name) then
@@ -124,8 +128,11 @@ wezterm.on('open-uri', function(window, pane, uri)
         };
       };
       window:perform_action(action, pane);
-    else
+    elseif basename(hx_pane:get_foreground_process_name()) == "hx" then
       local action = wezterm.action.SendString(':open ' .. name .. '\r\n')
+      window:perform_action(action, hx_pane);
+    else
+      local action = wezterm.action.SendString('hx ' .. name .. '\r\n')
       window:perform_action(action, hx_pane);
     end
     -- prevent the default action from opening in a browser

@@ -38,7 +38,10 @@ config.keys = {
   {
     key = '[',
     mods = 'CMD',
-    action = act.ActivatePaneDirection 'Up',
+    action = act.Multiple {
+      act.ActivatePaneDirection 'Up',
+      act.EmitEvent 'reload-helix',
+    }
   },
   {
     key = ']',
@@ -61,6 +64,20 @@ config.keys = {
     action = wezterm.action.TogglePaneZoomState,
   },
 }
+
+wezterm.on('reload-helix', function(window, pane)
+  local top_process = basename(pane:get_foreground_process_name())
+  if top_process == 'hx' then
+    local bottom_pane = pane:tab():get_pane_direction('Down')
+    if bottom_pane ~= nil then
+      local bottom_process = basename(bottom_pane:get_foreground_process_name())
+      if bottom_process == 'lazygit' then
+        local action = wezterm.action.SendString(':reload-all\r\n')
+        window:perform_action(action, pane);
+      end
+    end
+  end
+end)
 
 -- Keep the pane open after the program exits
 -- config.exit_behavior = "Hold"

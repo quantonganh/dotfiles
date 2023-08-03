@@ -26,6 +26,20 @@ config.unzoom_on_switch_pane = true
 
 config.keys = {
   {
+    key = ',',
+    mods = 'CMD',
+    action = act.SpawnCommandInNewTab {
+      cwd = os.getenv('WEZTERM_CONFIG_DIR'),
+      set_environment_variables = {
+        TERM = 'screen-256color',
+      },
+      args = {
+        'hx',
+        os.getenv('WEZTERM_CONFIG_FILE'),
+      },
+    },
+  },
+  {
     key = 'd',
     mods = 'CMD',
     action = wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' },
@@ -49,6 +63,16 @@ config.keys = {
     action = act.ActivatePaneDirection 'Down',
   },
   {
+    key = 'h',
+    mods = 'CMD|CTRL',
+    action = act.ActivatePaneDirection 'Left',
+  },
+  {
+    key = 'l',
+    mods = 'CMD|CTRL',
+    action = act.ActivatePaneDirection 'Right',
+  },
+  {
     key = 'UpArrow',
     mods = 'SHIFT',
     action = act.ScrollByLine(-1),
@@ -63,7 +87,33 @@ config.keys = {
     mods = 'CMD|SHIFT',
     action = wezterm.action.TogglePaneZoomState,
   },
+  {
+    key = 's',
+    mods = 'CMD|SHIFT',
+    action = wezterm.action.QuickSelectArgs {
+      label = 'open url',
+      patterns = {
+        'https?://\\S+',
+        '^/[^/\r\n]+(?:/[^/\r\n]+)*:\\d+:\\d+',
+        '[^\\s]+\\.rs:\\d+:\\d+',
+      },
+      action = wezterm.action_callback(function(window, pane)
+        local url = window:get_selection_text_for_pane(pane)
+        wezterm.log_info('opening: ' .. url)
+        if startswith(url, "http") then
+          wezterm.open_with(url)
+        else
+          url = "$EDITOR:" .. url
+          return open_with_hx(window, pane, url)
+        end
+      end),
+    },
+  },
 }
+
+function startswith(str, prefix)
+  return string.sub(str, 1, string.len(prefix)) == prefix
+end
 
 wezterm.on('reload-helix', function(window, pane)
   local top_process = basename(pane:get_foreground_process_name())
@@ -119,6 +169,7 @@ function editable(filename)
       go = true,
       scm = true,
       rkt = true,
+      rs = true,
     }
     if text_extensions[extension] then
       return true
@@ -128,13 +179,23 @@ function editable(filename)
   return false
 end
 
+function extension(filename)
+  return filename:match("%.([^.:/\\]+):%d+:%d+$")
+end
+
 function basename(s)
   return string.gsub(s, '(.*[/\\])(.*)', '%2')
 end
 
-wezterm.on('open-uri', function(window, pane, uri)
-  local name = extract_filename(uri)
+function open_with_hx(window, pane, url)
+  local name = extract_filename(url)
+  wezterm.log_info('name: ' .. url)
   if name and editable(name) then
+    if extension(name) == "rs" then
+      local pwd = string.gsub(pane:get_current_working_dir(), "file://.-(/.+)", "%1")
+      name = pwd .. "/" .. name
+    end
+
     local direction = 'Up'
     local hx_pane = pane:tab():get_pane_direction(direction)
     if hx_pane == nil then
@@ -145,12 +206,15 @@ wezterm.on('open-uri', function(window, pane, uri)
         };
       };
       window:perform_action(action, pane);
+      pane:tab():get_pane_direction(direction).activate()
     elseif basename(hx_pane:get_foreground_process_name()) == "hx" then
       local action = wezterm.action.SendString(':open ' .. name .. '\r\n')
       window:perform_action(action, hx_pane);
+      hx_pane:activate()
     else
       local action = wezterm.action.SendString('hx ' .. name .. '\r\n')
       window:perform_action(action, hx_pane);
+      hx_pane:activate()
     end
     -- prevent the default action from opening in a browser
     return false
@@ -158,6 +222,10 @@ wezterm.on('open-uri', function(window, pane, uri)
   -- otherwise, by not specifying a return value, we allow later
   -- handlers and ultimately the default action to caused the
   -- URI to be opened in the browser
+end
+
+wezterm.on('open-uri', function(window, pane, uri)
+  return open_with_hx(window, pane, uri)
 end)
 
 config.hyperlink_rules = wezterm.default_hyperlink_rules()
@@ -166,6 +234,14 @@ table.insert(config.hyperlink_rules, {
   regex = '^/[^/\r\n]+(?:/[^/\r\n]+)*:\\d+:\\d+',
   format = '$EDITOR:$0',
 })
+
+table.insert(config.hyperlink_rules, {
+  regex = '[^\\s]+\\.rs:\\d+:\\d+',
+  format = '$EDITOR:$0',
+})
+
+-- https://wezfurlong.org/wezterm/faq.html#multiple-characters-being-renderedcombined-as-one-character
+config.harfbuzz_features = { 'calt=0' }
 
 -- and finally, return the configuration to wezterm
 return config

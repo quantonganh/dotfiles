@@ -20,11 +20,14 @@ case "$extension" in
   "go")
     run_command="go run $basedir/*.go"
     ;;
+  "md")
+    run_command="mdcat -p $filename"
+    ;;
   "rkt"|"scm")
     run_command="racket $filename"
     ;;
   "rs")
-    run_command="cd $basedir; cargo run"
+    run_command="cd $(dirname "$basedir"); cargo run; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end"
     ;;
   "sh")
     run_command="sh $filename"
@@ -32,4 +35,3 @@ case "$extension" in
 esac
 
 echo "${run_command}" | wezterm cli send-text --pane-id $pane_id --no-paste
-# wezterm cli activate-pane-direction up

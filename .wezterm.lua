@@ -40,6 +40,16 @@ config.keys = {
     },
   },
   {
+    key = ';',
+    mods = 'CMD',
+    action = act.SpawnCommandInNewTab {
+      args = {
+        'hx',
+        '~/.local/bin/run.sh',
+      },
+    },
+  },
+  {
     key = 'd',
     mods = 'CMD',
     action = wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' },
@@ -96,15 +106,30 @@ config.keys = {
         'https?://\\S+',
         '^/[^/\r\n]+(?:/[^/\r\n]+)*:\\d+:\\d+',
         '[^\\s]+\\.rs:\\d+:\\d+',
+        'rustc --explain E\\d+',
       },
       action = wezterm.action_callback(function(window, pane)
-        local url = window:get_selection_text_for_pane(pane)
-        wezterm.log_info('opening: ' .. url)
-        if startswith(url, "http") then
-          wezterm.open_with(url)
+        local selection = window:get_selection_text_for_pane(pane)
+        wezterm.log_info('opening: ' .. selection)
+        if startswith(selection, "http") then
+          wezterm.open_with(selection)
+        elseif startswith(selection, "rustc --explain") then
+          local action = wezterm.action{
+            SplitPane={
+              direction = 'Right',
+              command = {
+                args = {
+                  '/bin/sh',
+                  '-c',
+                  'rustc --explain ' .. selection:match("(%S+)$") .. ' | mdcat -p',
+                },
+              },
+            };
+          };
+          window:perform_action(action, pane);
         else
-          url = "$EDITOR:" .. url
-          return open_with_hx(window, pane, url)
+          selection = "$EDITOR:" .. selection
+          return open_with_hx(window, pane, selection)
         end
       end),
     },

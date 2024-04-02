@@ -1,18 +1,29 @@
 #!/usr/bin/env sh
 
-tty=$(tty)
-hostname=$(hostname | tr '[:upper:]' '[:lower:]')
-pwd=$(pwd)
-file_path=$1
+set -x
 
-pane_id=$(wezterm cli list --format json | jq --arg tty "$tty" --arg opening_cwd "file://$hostname$pwd" --arg file_path "file://$hostname$file_path" -r '.[] | .cwd as $running_cwd | select((.tty_name != $tty) and (.title | startswith("hx")) and (($opening_cwd | contains($running_cwd)) or ($file_path | contains($running_cwd)))) | .pane_id')
-if [ -z "$pane_id" ]; then
-    ~/.cargo/bin/hx $1
-else
-    if [ -n "$file_path" ]; then
-        echo ":open ${file_path}\r" | wezterm cli send-text --pane-id $pane_id --no-paste
+state_file="${PWD}/.hx/state.json"
+
+if [ -f "$1" ]; then
+    if [ -f $state_file ]; then
+        line_number=$(jq --arg opening_filename $1 -r '.[] | select(.filename == $opening_filename) | .line_number' $state_file)
+        if [ -n $line_numer ]; then
+            ~/.cargo/bin/hx ${1}:${line_number}
+        fi
     else
-        echo ":open ${pwd}\r" | wezterm cli send-text --pane-id $pane_id --no-paste
+        ~/.cargo/bin/hx $1
     fi
-    wezterm cli activate-pane --pane-id $pane_id
+else
+    if [ -d "$1" ]; then
+        project_dir="$1"
+    elif [ $# -eq 0 ]; then
+        project_dir=$(pwd)
+    fi
+
+    cd $project_dir
+    if [ -f .hx/state.json ]; then
+        ~/.cargo/bin/hx $(jq -r '.[] | "\(.filename):\(.line_number)"' .hx/state.json | tr '\n' ' ')
+    else
+        ~/.cargo/bin/hx $#
+    fi
 fi

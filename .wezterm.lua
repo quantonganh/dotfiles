@@ -11,6 +11,18 @@ wezterm.on('gui-startup', function(cmd)
   window:gui_window():maximize()
 end)
 
+config.unix_domains = {
+  {
+    name = 'unix',
+  },
+}
+
+-- This causes `wezterm` to act as though it was started as
+-- `wezterm connect unix` by default, connecting to the unix
+-- domain on startup.
+-- If you prefer to connect manually, leave out this line.
+config.default_gui_startup_args = { 'connect', 'unix' }
+
 -- In newer versions of wezterm, use the config_builder which will
 -- help provide clearer error messages
 if wezterm.config_builder then
@@ -18,11 +30,20 @@ if wezterm.config_builder then
 end
 
 -- This is where you actually apply your config choices
+config.native_macos_fullscreen_mode = true
 
 -- For example, changing the color scheme:
 config.color_scheme = 'Darcula (base16)'
+config.font = wezterm.font_with_fallback { 'JetBrains Mono', 'Iosevka Nerd Font' }
 config.font_size = 14.0
 config.unzoom_on_switch_pane = true
+-- How many lines of scrollback you want to retain per tab
+config.scrollback_lines = 3500
+
+config.colors = {
+  cursor_bg = 'white',
+  cursor_fg = 'black',
+}
 
 config.keys = {
   {
@@ -45,19 +66,19 @@ config.keys = {
     action = act.SpawnCommandInNewTab {
       args = {
         'hx',
-        '~/.local/bin/run.sh',
+        '~/.local/bin/helix-wezterm.sh',
       },
     },
   },
   {
     key = 'd',
     mods = 'CMD',
-    action = wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' },
+    action = act.SplitHorizontal { domain = 'CurrentPaneDomain' },
   },
   {
     key = 'd',
     mods = 'CMD|SHIFT',
-    action = wezterm.action.SplitVertical { domain = 'CurrentPaneDomain' },
+    action = act.SplitVertical { domain = 'CurrentPaneDomain' },
   },
   {
     key = '[',
@@ -70,51 +91,72 @@ config.keys = {
   {
     key = ']',
     mods = 'CMD',
-    action = act.ActivatePaneDirection 'Down',
+    action = act.ActivatePaneDirection 'Next',
   },
   {
     key = 'h',
-    mods = 'CMD|CTRL',
+    mods = 'ALT',
     action = act.ActivatePaneDirection 'Left',
   },
   {
     key = 'l',
-    mods = 'CMD|CTRL',
+    mods = 'ALT',
     action = act.ActivatePaneDirection 'Right',
   },
   {
-    key = 'UpArrow',
-    mods = 'SHIFT',
+    key = 'k',
+    mods = 'CTRL|SHIFT',
     action = act.ScrollByLine(-1),
   },
   {
-    key = 'DownArrow',
-    mods = 'SHIFT',
+    key = 'j',
+    mods = 'CTRL|SHIFT',
     action = act.ScrollByLine(1),
   },
   {
     key = 'Enter',
-    mods = 'CMD|SHIFT',
-    action = wezterm.action.TogglePaneZoomState,
+    mods = 'CMD|CTRL',
+    action = act.TogglePaneZoomState,
+  },
+    {
+    key = 'h',
+    mods = 'CMD|CTRL',
+    action = act.AdjustPaneSize { 'Left', 5 },
+  },
+  {
+    key = 'j',
+    mods = 'CMD|CTRL',
+    action = act.AdjustPaneSize { 'Down', 5 },
+  },
+  {
+    key = 'k',
+    mods = 'CMD|CTRL',
+    action = act.AdjustPaneSize { 'Up', 5 } },
+  {
+    key = 'l',
+    mods = 'CMD|CTRL',
+    action = act.AdjustPaneSize { 'Right', 5 },
   },
   {
     key = 's',
     mods = 'CMD|SHIFT',
-    action = wezterm.action.QuickSelectArgs {
+    action = act.QuickSelectArgs {
       label = 'open url',
       patterns = {
         'https?://\\S+',
         '^/[^/\r\n]+(?:/[^/\r\n]+)*:\\d+:\\d+',
         '[^\\s]+\\.rs:\\d+:\\d+',
+        '[^\\s]+\\.go:\\d+:\\d+',
         'rustc --explain E\\d+',
+        '[^{]*{.*}',
       },
       action = wezterm.action_callback(function(window, pane)
         local selection = window:get_selection_text_for_pane(pane)
         wezterm.log_info('opening: ' .. selection)
-        if startswith(selection, "http") then
+        if Startswith(selection, "http") then
           wezterm.open_with(selection)
-        elseif startswith(selection, "rustc --explain") then
-          local action = wezterm.action{
+        elseif Startswith(selection, "rustc --explain") then
+          local action = act{
             SplitPane={
               direction = 'Right',
               command = {
@@ -127,6 +169,23 @@ config.keys = {
             };
           };
           window:perform_action(action, pane);
+        elseif selection:match('[^{]*{.*}') then
+          wezterm.log_info('processing json: ' .. selection)
+          local command = 'echo \'' .. selection:match("{.*}") .. '\' | jq -C . | less -R'
+          wezterm.log_info('command: ' .. command)
+          local action = act{
+            SplitPane={
+              direction = 'Right',
+              command = {
+                args = {
+                  '/bin/sh',
+                  '-c',
+                  command,
+                },
+              },
+            };
+          };
+          window:perform_action(action, pane);
         else
           selection = "$EDITOR:" .. selection
           return open_with_hx(window, pane, selection)
@@ -134,9 +193,68 @@ config.keys = {
       end),
     },
   },
+  {
+		key = "I",
+		mods = "CTRL|SHIFT",
+		action = act.PaneSelect { show_pane_ids = true },
+	},
+  {
+    key = 'O',
+    mods = 'CMD|SHIFT',
+    action = wezterm.action_callback(function(window, pane)
+      -- Here you can dynamically construct a longer list if needed
+
+      local project_dir = wezterm.home_dir .. '/Code/GHTK/atao-cloud'
+      local projects = {}
+      for _, dir in ipairs(wezterm.glob(project_dir .. '/*')) do
+        wezterm.log_info('dir: ', dir)
+        table.insert(projects, dir)
+      end
+
+      local choices = {}
+      for _, project in ipairs(projects) do
+        table.insert(choices, { id = project, label = basename(project) })
+      end
+
+      window:perform_action(
+        act.InputSelector {
+          action = wezterm.action_callback(
+            function(inner_window, inner_pane, id, label)
+              if not id and not label then
+                wezterm.log_info 'cancelled'
+              else
+                wezterm.log_info('id = ' .. id)
+                wezterm.log_info('label = ' .. label)
+                inner_window:perform_action(
+                  act.SpawnCommandInNewTab {
+                    args = {
+                      'hx',
+                      id,
+                    },
+                  },
+                  inner_pane
+                )
+                wezterm.sleep_ms(100)
+                inner_window:perform_action(
+                  -- Enter -> Space e -> Esc
+                  act.SendString('README.md\r\x20e\x1b'),
+                  inner_window:active_pane()
+                )
+              end
+            end
+          ),
+          title = 'Choose Project',
+          choices = choices,
+          fuzzy = true,
+          fuzzy_description = 'Fuzzy matching: ',
+        },
+        pane
+      )
+    end),
+  },
 }
 
-function startswith(str, prefix)
+function Startswith(str, prefix)
   return string.sub(str, 1, string.len(prefix)) == prefix
 end
 
@@ -146,9 +264,13 @@ wezterm.on('reload-helix', function(window, pane)
     local bottom_pane = pane:tab():get_pane_direction('Down')
     if bottom_pane ~= nil then
       local bottom_process = basename(bottom_pane:get_foreground_process_name())
-      if bottom_process == 'lazygit' then
-        local action = wezterm.action.SendString(':reload-all\r\n')
-        window:perform_action(action, pane);
+      wezterm.log_info('bottom process: ' .. bottom_process)
+      if bottom_process == 'lazygit' or bottom_process == 'fish' then
+        window:perform_action(act.SendString('\x1b'), pane); -- ESC the file explorer
+        wezterm.sleep_ms(100)
+        window:perform_action(act.SendString('\x1b'), pane); -- ESC the insert mode
+        wezterm.sleep_ms(100)
+        window:perform_action(act.SendString(':reload-all\r'), pane);
       end
     end
   end
@@ -158,20 +280,22 @@ end)
 -- config.exit_behavior = "Hold"
 
 -- Honor kitty keyboard protocol: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
-config.enable_kitty_keyboard = true
+-- config.enable_kitty_keyboard = true
 
 for i = 1, 8 do
   -- CTRL+ALT+number to move to that position
   table.insert(config.keys, {
     key = tostring(i),
     mods = 'CTRL|ALT',
-    action = wezterm.action.MoveTab(i - 1),
+    action = act.MoveTab(i - 1),
   })
 end
 
 config.set_environment_variables = {
-  PATH = '/Users/quantong/.cargo/bin:'
+  PATH = '/Users/quantong/.local/bin:'
+      .. '/Users/quantong/.cargo/bin:'
       .. '/opt/homebrew/bin:'
+      .. '/Users/quantong/Code/contrib/go/bin:'
       .. os.getenv('PATH')
 }
 
@@ -223,8 +347,9 @@ function open_with_hx(window, pane, url)
 
     local direction = 'Up'
     local hx_pane = pane:tab():get_pane_direction(direction)
+    wezterm.log_info("fg process: " .. hx_pane:get_foreground_process_name())
     if hx_pane == nil then
-      local action = wezterm.action{
+      local action = act{
         SplitPane={
           direction = direction,
           command = { args = { 'hx', name } }
@@ -233,11 +358,14 @@ function open_with_hx(window, pane, url)
       window:perform_action(action, pane);
       pane:tab():get_pane_direction(direction).activate()
     elseif basename(hx_pane:get_foreground_process_name()) == "hx" then
-      local action = wezterm.action.SendString(':open ' .. name .. '\r\n')
+      wezterm.log_info('process = hx')
+      local action = act.SendString(':open ' .. name .. '\r')
       window:perform_action(action, hx_pane);
+      -- local zoom_action = wezterm.action.SendString(':sh wezterm cli zoom-pane\r\n')
+      -- window:perform_action(zoom_action, hx_pane);
       hx_pane:activate()
     else
-      local action = wezterm.action.SendString('hx ' .. name .. '\r\n')
+      local action = act.SendString('hx ' .. name .. '\r')
       window:perform_action(action, hx_pane);
       hx_pane:activate()
     end
@@ -267,6 +395,24 @@ table.insert(config.hyperlink_rules, {
 
 -- https://wezfurlong.org/wezterm/faq.html#multiple-characters-being-renderedcombined-as-one-character
 config.harfbuzz_features = { 'calt=0' }
+
+config.float_pane_padding = {
+  left = '5%',
+  right = '5%',
+  top = '5%',
+  bottom = '5%',
+}
+
+config.float_pane_border = {
+  left_width = '0.25cell',
+  right_width = '0.25cell',
+  bottom_height = '0.125cell',
+  top_height = '0.125cell',
+  left_color = '#665c54',
+  right_color = '#665c54',
+  bottom_color = '#665c54',
+  top_color = '#665c54',
+}
 
 -- and finally, return the configuration to wezterm
 return config

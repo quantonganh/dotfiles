@@ -1,151 +1,195 @@
 #!/bin/sh
 
-set -x
-
-hx_pane_id=$(echo $WEZTERM_PANE)
-send_to_hx_pane="wezterm cli send-text --pane-id $hx_pane_id --no-paste"
-switch_to_hx_pane_and_zoom="if [ \$status = 0 ]; wezterm cli activate-pane-direction up; wezterm cli zoom-pane --pane-id $hx_pane_id --zoom; end"
-
-status_line=$(wezterm cli get-text | rg -e "(?:NORMAL|INSERT|SELECT)\s+[\x{2800}-\x{28FF}]*\s+(\S*)\s[^│]* (\d+):*.*" -o --replace '$1 $2')
-filename=$(echo $status_line | awk '{ print $1}')
-line_number=$(echo $status_line | awk '{ print $2}')
-
-split_pane_down() {
-  bottom_pane_id=$(wezterm cli get-pane-direction down)
-  if [ -z "${bottom_pane_id}" ]; then
-    bottom_pane_id=$(wezterm cli split-pane)
-  fi
-
-  wezterm cli activate-pane-direction --pane-id $bottom_pane_id down
-
-  send_to_bottom_pane="wezterm cli send-text --pane-id $bottom_pane_id --no-paste"
-  program=$(wezterm cli list | awk -v pane_id="$bottom_pane_id" '$3==pane_id { print $6 }')
-  if [ "$program" = "lazygit" ]; then
-    echo "q" | $send_to_bottom_pane
-  fi
-}
+# Get the action from the first argument
+action=$1
+export buffer_name=$2
+export cursor_line=$3
+export selection_line_start=$4
+export selection_line_end=$5
 
 pwd=$(PWD)
-basedir=$(dirname "$filename")
-basename=$(basename "$filename")
-basename_without_extension="${basename%.*}"
-extension="${filename##*.}"
+export basedir=$(dirname "$buffer_name")
+export binary_output=$(basename $basedir)
+file_name=$(basename "$buffer_name")
+export file_stem="${file_name%.*}"
+extension="${buffer_name##*.}"
 
-case "$1" in
-  "blame")
-    split_pane_down
-    echo "cd $pwd; tig blame $filename +$line_number" | $send_to_bottom_pane
+# Load the configuration file
+config_file="${XDG_CONFIG_HOME:-$HOME}/.helix-wezterm.yaml"
+
+usage() {
+    echo "Usage: $0 <action> [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help      Display this help message and exit"
+    echo ""
+    echo "Available actions:"
+    yq eval '.actions | to_entries | .[] | "- \(.key): \(.value.description)"' $config_file
+    exit 0
+}
+
+for arg in "$@"; do
+  case $arg in
+    -h|--help)
+      usage
+      ;;
+  esac
+done
+
+# Extract the position, percent and command from the YAML configuration
+position=$(yq e ".actions.$action.position" "$config_file")
+if [ "$position" == "null" ]; then
+  position="bottom"
+fi
+
+percent=$(yq e ".actions.$action.percent" "$config_file")
+if [ "$percent" == "null" ]; then
+  percent=50
+fi
+command=$(yq e ".actions.$action.command" "$config_file")
+
+case "$action" in
+  "ai")
+    export selection=$(cat)
+    export session=$(basename "$pwd")_$(echo "$buffer_name" | tr "/" "_")
     ;;
-  "check")
-    split_pane_down
+  "mock")
     case "$extension" in
-      "rs")
-        run_command="cd $pwd/$(echo $filename | sed 's|src/.*$||'); cargo check; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end;"
+      "go")
+        current_line=$(head -$cursor_line $buffer_name | tail -1)
+        export interface_name=$(echo $current_line | sed -n 's/^type \([A-Za-z0-9_]*\) interface {$/\1/p')
         ;;
     esac
-    echo "$run_command" | $send_to_bottom_pane
-    ;;
-  "explorer")
-    wezterm cli activate-pane-direction up
-
-    left_pane_id=$(wezterm cli get-pane-direction left)
-    if [ -z "${left_pane_id}" ]; then
-      left_pane_id=$(wezterm cli split-pane --left --percent 20)
-    fi
-
-    left_program=$(wezterm cli list | awk -v pane_id="$left_pane_id" '$3==pane_id { print $6 }')
-    if [ "$left_program" != "br" ]; then
-      echo "br" | wezterm cli send-text --pane-id $left_pane_id --no-paste
-    fi
-
-    wezterm cli activate-pane-direction left
-    ;;
-  "fzf")
-    split_pane_down
-    echo "cd $pwd; hx-fzf.sh \$(rg --line-number --column --no-heading --smart-case . | fzf --delimiter : --preview 'bat --style=full --color=always --highlight-line {2} {1}' --preview-window '~3,+{2}+3/2' | awk '{ print \$1 }' | cut -d: -f1,2,3)" | $send_to_bottom_pane
-    ;;
-  "howdoi")
-    split_pane_down
-    echo "howdoi -c `pbpaste`" | $send_to_bottom_pane
-    ;;
-  "jq")
-    split_pane_down
-    echo "echo '`pbpaste`' | jq" | $send_to_bottom_pane
-    ;;
-  "lazygit")
-    split_pane_down
-    program=$(wezterm cli list | awk -v pane_id="$pane_id" '$3==pane_id { print $6 }')
-    if [ "$program" = "lazygit" ]; then
-        wezterm cli activate-pane-direction down
-    else
-        echo "lazygit" | $send_to_bottom_pane
-    fi
     ;;
   "open")
-    gh browse $filename:$line_number  
+    remote_url=$(git config remote.origin.url)
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    tracking_branch=$(git for-each-ref --format='%(upstream:short)' refs/heads/$current_branch)
+    if [[ $remote_url == *"github.com"* ]]; then
+      tracking_remote=$(cut -d'/' -f1 <<< "$tracking_branch")
+      tracking_branch_name=$(cut -d'/' -f2- <<< "$tracking_branch")
+      gh browse "$buffer_name:$cursor_line" --repo "$(git config remote.$tracking_remote.url)" --branch "$tracking_branch_name"
+    else
+      if [[ $remote_url == "git@"* ]]; then
+        open $(echo $remote_url | sed -e 's|:|/|' -e 's|\.git||' -e 's|git@|https://|')/-/blob/${current_branch}/${buffer_name}#L${cursor_line}
+      else
+        open $(echo $remote_url | sed -e 's|\.git||')/-/blob/${current_branch}/${buffer_name}#L${cursor_line}
+      fi
+    fi
+    ;;
+  "test")
+    case "$extension" in
+      "go")
+        export test_name=$(head -$cursor_line $buffer_name | tail -1 | sed -n 's/func \([^(]*\).*/\1/p')
+        ;;
+      "hurl")
+        current_line=$(head -$cursor_line $buffer_name | tail -1)
+        export entry=$(awk -v cur_line=$cursor_line '
+          /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)/ { entry_line = NR; entry_num++ }
+          NR == cur_line { print entry_num }
+        ' "$buffer_name")
+        ;;
+      "rs")
+        export test_name=$(head -$cursor_line $buffer_name | tail -1 | sed -n 's/^.*fn \([^ ]*\)().*$/\1/p')
+        ;;
+    esac
     ;;
   "run")
-    split_pane_down
-    case "$extension" in
-      "c")
-        run_command="clang -lcmocka -lmpfr -Wall -g -O1 $filename -o $basedir/$basename_without_extension && $basedir/$basename_without_extension"
-        ;;
-      "go")
-        run_command="go run $basedir/*.go"
-        ;;
-      "md")
-        run_command="mdcat -p $filename"
-        ;;
-      "rkt"|"scm")
-        run_command="racket $filename"
-        ;;
-      "rs")
-        run_command="cd $pwd/$(echo $filename | sed 's|src/.*$||'); cargo run; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end"
-        ;;
-      "sh")
-        run_command="sh $filename"
+    case "$file_name" in
+      "justfile")
+        export recipe=$(head -$cursor_line $buffer_name | tail -1 | sed -n 's/:$//')
         ;;
     esac
-    echo "$run_command" | $send_to_bottom_pane
-    ;;
-  "generate_tests")
-    split_pane_down
-    case "$extension" in
-      "go")
-        echo "gotests -w -all $filename" | $send_to_bottom_pane
-        run_command="echo -e \":open $basedir/${basename_without_extension}_test.go\\\r\" | $send_to_hx_pane; $switch_to_hx_pane_and_zoom"
-        echo "$run_command" | $send_to_bottom_pane
-        ;;
-    esac
-    ;;
-  "test_all")
-    split_pane_down
-    case "$extension" in
-      "go")
-        run_command="go test -v ./...; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end;"
-        ;;
-      "rs")
-        run_command="cd $pwd/$(echo $filename | sed 's|src/.*$||'); cargo test; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end;"
-        ;;
-    esac
-    echo "$run_command" | $send_to_bottom_pane
-    ;;
-  "test_single")
-    split_pane_down
-    case "$extension" in
-      "go")
-        test_name=$(head -$line_number $filename | tail -1 | sed -n 's/func \([^(]*\).*/\1/p')
-        run_command="go test -run=$test_name -v ./$basedir/...; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end;"
-        ;;
-      "rs")
-        test_name=$(head -$line_number $filename | tail -1 | sed -n 's/^.*fn \([^ ]*\)().*$/\1/p')
-        run_command="cd $pwd/$(echo $filename | sed 's|src/.*$||'); cargo test $test_name; if [ \$status = 0 ]; wezterm cli activate-pane-direction up; end;"
-        ;;
-    esac
-    echo "$run_command" | $send_to_bottom_pane
-    ;;
-  "tgpt")
-    split_pane_down
-    echo "tgpt '`pbpaste`'" | $send_to_bottom_pane
     ;;
 esac
+  
+case "$position" in
+  "left")
+    get_direction="left"
+    ;;
+  "right")
+    get_direction="right"
+    ;;
+  "top")
+    get_direction="up"
+    ;;
+  "bottom")
+    get_direction="down"
+    ;;
+esac
+
+# Create a new pane in a specified direction or as a floating pane
+create_pane() {
+  panes_json=$(wezterm cli list --format json)
+  tab_id=$(echo "$panes_json" | yq -r ".[] | select(.pane_id == $WEZTERM_PANE) | .tab_id")
+  reuse_pattern=$(yq e ".actions.$action.reuse_pattern" "$config_file")
+
+  case "$position" in
+    "floating")
+      is_zoomed=$(echo "$panes_json" | yq -r ".[] | select(.pane_id == $WEZTERM_PANE) | .is_zoomed")
+      if [ "$is_zoomed" == "true" ]; then
+        wezterm cli zoom-pane --unzoom
+      fi
+    
+      if [ "$reuse_pattern" == "null" ]; then
+        # Check if there is a floating pane containing a shell in the current tab
+        pane_id=$(echo "$panes_json" | yq -p=json -o=json ".[] | select(.tab_id == $tab_id and .is_floating == true and (.title | match(\"^~/\"))) | .pane_id" | head -n1)
+      else
+        pane_id=$(echo "$panes_json" | yq -r ".[] | select(.tab_id == $tab_id and (.title | test(\"$reuse_pattern\"))) | .pane_id" | head -n1)
+      fi
+
+      if [ -z "$pane_id" ]; then
+        pane_id=$(wezterm cli spawn --floating-pane)
+      else
+        reuse_pane="true"
+      fi
+      ;;
+    "window")
+      pane_id=$(wezterm cli spawn --cwd "$pwd" --new-window)
+      ;;
+    "tab")
+      pane_id=$(wezterm cli spawn --cwd "$pwd")
+      ;;
+    *)
+      if [ "$reuse_pattern" == "null" ]; then
+        pane_id=$(wezterm cli get-pane-direction $get_direction)
+      else
+        pane_id=$(echo "$panes_json" | yq -r ".[] | select(.tab_id == $tab_id and (.title | test(\"$reuse_pattern\"))) | .pane_id" | head -n1)
+      fi
+
+      if [ -z "$pane_id" ]; then
+        pane_id=$(wezterm cli split-pane --$position --percent $percent)
+      else
+        reuse_pane="true"
+      fi
+      ;;
+  esac
+
+  wezterm cli activate-pane --pane-id $pane_id
+  send_to_pane="wezterm cli send-text --pane-id $pane_id --no-paste"
+}
+
+act=$(yq e ".actions.$action" "$config_file")
+if [ "$act" != "null" ]; then
+  create_pane
+
+  # Send command to the target pane
+  ext=$(yq e ".actions.$action.extensions" "$config_file")
+  if [ "$ext" != "null" ]; then
+    extension="${buffer_name##*.}"
+    command=$(yq e ".actions.$action.extensions.$extension" "$config_file")
+  fi
+
+  if [ "$reuse_pane" = "true" ]; then
+    reuse_command=$(yq e ".actions.$action.reuse_command" "$config_file")
+    if [ "$reuse_command" != "null" ]; then
+      expanded_command=$(echo "$reuse_command" | envsubst '$buffer_name,$selection_line_start,$selection_line_end')
+    fi
+  fi
+
+  if [ -z "$expanded_command" ]; then
+    expanded_command=$(echo "$command" | envsubst '$WEZTERM_PANE,$basedir,$binary_output,$buffer_name,$file_stem,$cursor_line,$selection,$selection_line_start,$selection_line_end,$interface_name,$test_name,$session,$entry')
+  fi
+
+  echo "$expanded_command" | $send_to_pane
+fi

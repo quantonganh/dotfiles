@@ -1,0 +1,118 @@
+actions:
+  ai:
+    position: right
+    percent: 40
+    command: |
+      limactl shell --start sb opencode --agent plan --prompt "@$buffer_name:L$selection_line_start-$selection_line_end: $(gum input --placeholder "prompt")"
+    reuse_pattern: "^opencode"
+    reuse_command: |
+      @$buffer_name:L$selection_line_start-$selection_line_end: 
+    # command: |
+    #   qwen -i "@$buffer_name:L$selection_line_start-$selection_line_end: $(gum input --placeholder "prompt")"
+    # reuse_pattern: "^Qwen"
+    # reuse_command: |
+    #   @$buffer_name:L$selection_line_start-$selection_line_end: 
+  blame:
+    description: Show blame for the current file and line number
+    command: tig blame $buffer_name +$cursor_line
+    position: floating
+  opencode:
+    command: limactl shell --start sb opencode
+    position: right
+    percent: 40
+  doc:
+    extensions:
+      go: if test -f .diagtree.yaml; diagtree -c .diagtree.yaml; else; diagtree -c /Users/quantong/Code/personal/diagtree/examples/godoc.yaml; end
+      rs: navi -p /Users/quantong/.local/share/navi/cheats/rust
+      java: navi -p /Users/quantong/.local/share/navi/cheats/java
+      yaml: diagtree -c .diagtree.yaml
+    position: floating
+  tree:
+    description: Open the file tree
+    position: left
+    percent: 25
+    # command: HX_PANE_ID=$WEZTERM_PANE YAZI_CONFIG_HOME=~/.config/yazi/filetree yazi
+    command: HX_PANE_ID=$WEZTERM_PANE broot
+  generate_tests:
+    description: Generate Go tests for the current file
+    command: gotests -w -all $buffer_name
+  install:
+    extensions:
+      java: mvn clean install -pl $(echo "$buffer_name" | cut -d/ -f1) -DskipTests -am
+  jira:
+    command: fj
+    position: floating
+  k9s:
+    command: k9s -n testing
+    position: floating
+  lazygit:
+    description: Open terminal UI for git commands
+    command: lazygit
+    position: floating
+  lint:
+    description: Lint the current file
+    extensions:
+      go: golangci-lint run -v $buffer_name
+  mock:
+    description: Generate mocks
+    command: mockery --with-expecter --dir $basedir --name $interface_name
+  navi:
+    description: Open an interactive cheatsheet tool
+    command: while true; if test -f .navi.cheat; navi -p .; else; navi; end && echo; gum confirm "Run another command?" || break; end
+    position: floating
+  presenterm:
+    description: Present the current file
+    position: window
+    extensions:
+      md: presenterm --theme terminal-dark -x $buffer_name
+  query:
+    description: Query database
+    command: lazysql
+    position: floating
+  run:
+    description: Run the current file
+    # position: floating
+    extensions:
+      d2: d2 --sketch $buffer_name --watch
+      go: go run $basedir/*.go
+      md: glow -p $buffer_name
+      rs: cargo run
+      java: hxide-java.sh run $buffer_name
+      py: pbpaste | python3
+      rkt: racket $buffer_name
+      ts: yarn start
+      tsp: tsp compile $buffer_name --output-dir src/main/resources/static
+      yml: if string match -r "^.github/workflows/" $buffer_name; act -v; end
+      yaml: go run main.go -c examples/javadoc.yaml
+      js: tree-sitter generate && hx --grammar build
+      sh: ./$buffer_name
+  slumber:
+    description: Open a HTTP client
+    position: floating
+    command: slumber -f ../slumber.yml
+  exercism_submit:
+    extensions:
+      java: exercism submit $buffer_name
+      scm: exercism submit $buffer_name
+  test:
+    description: Test the current file
+    extensions:
+      go: go test -run=$test_name -v ./$basedir/...
+      hurl: >
+        hurl --very-verbose --color --variables-file local.env --to-entry 1 --output token.json $buffer_name; hurl --test --very-verbose --color --variables-file local.env --variable token=$(jq -r '.token' token.json) --variable epoch=$(date +%s) --from-entry $entry --to-entry $entry $buffer_name
+      rs: cargo test --manifest-path $(dirname $basedir)/Cargo.toml
+      java: hxide-java.sh test $buffer_name
+      scm: cd $basedir; if test -f test.scm; chez --script test.scm; end; cd -
+      hdl: HardwareSimulator.sh $basedir/$file_stem.tst; or delta $basedir/$file_stem.out $basedir/$file_stem.cmp
+      lua: busted -C $basedir
+      yml: if test $buffer_name = "docker-compose.yml"; docker-compose up; end
+  validate:
+    position: bottom
+    extensions:
+      sql: >
+        echo "{\"create_sql\": \"$(pbpaste | tr '\n' ' ')\"}" | http post https://ddl-validator.ghtklab.com/api/v1/validator/
+  watch:
+    position: right
+    extensions:
+      d2: watchexec -e d2 -- "d2 $buffer_name $file_stem.txt && cat $file_stem.txt"
+

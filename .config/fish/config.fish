@@ -56,3 +56,9 @@ direnv hook fish | source
 
 # The next line updates PATH for the Google Cloud SDK.
 if [ -f '~/Downloads/google-cloud-sdk/path.fish.inc' ]; . '~/Downloads/google-cloud-sdk/path.fish.inc'; end
+
+abbr -a !! --position anywhere --function last_history_item
+
+function fish_user_key_bindings
+    bind \ek history-token-search-backward
+end
